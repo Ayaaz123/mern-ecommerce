@@ -7,44 +7,63 @@ const { sanitizeUser } = require("../utils/SanitizeUser");
 const { generateToken } = require("../utils/GenerateToken");
 const PasswordResetToken = require("../models/PasswordResetToken");
 
-exports.signup=async(req,res)=>{
+exports.signup = async (req, res) => {
     try {
-        const existingUser=await User.findOne({email:req.body.email})
+        const existingUser = await User.findOne({ email: req.body.email })
         
         // if user already exists
-        if(existingUser){
-            return res.status(400).json({"message":"User already exists"})
+        if (existingUser) {
+            return res.status(400).json({ "message": "User already exists" })
         }
 
         // hashing the password
-        const hashedPassword=await bcrypt.hash(req.body.password,10)
-        req.body.password=hashedPassword
+        const hashedPassword = await bcrypt.hash(req.body.password, 10)
+        req.body.password = hashedPassword
 
         // creating new user
-        const createdUser=new User(req.body)
+        const createdUser = new User(req.body)
         await createdUser.save()
 
+        // 🔑 GENERATE AND SAVE THE VERIFICATION OTP
+        const otp = generateOTP()
+        const hashedOtp = await bcrypt.hash(otp, 10)
+        const newOtp = new Otp({
+            user: createdUser._id,
+            otp: hashedOtp,
+            expiresAt: Date.now() + parseInt(process.env.OTP_EXPIRATION_TIME || 120000)
+        })
+        await newOtp.save()
+
+        // 📧 SEND THE EMAIL IMMEDIATELY VIA PORT 465
+        await sendMail(
+            createdUser.email,
+            `OTP Verification for Your Account`,
+            `Your One-Time Password (OTP) for account verification is: <b>${otp}</b>.<br/>Do not share this code with anyone.`
+        )
+
         // getting secure user info
-        const secureInfo=sanitizeUser(createdUser)
+        const secureInfo = sanitizeUser(createdUser)
 
         // generating jwt token
-        const token=generateToken(secureInfo)
+        const token = generateToken(secureInfo)
 
         // sending jwt token in the response cookies
-        res.cookie('token',token,{
-            sameSite: process.env.PRODUCTION === 'true' ? 'none' : 'Lax',
+        res.cookie('token', token, {
+            sameSite: 'none', // Lowercase string required for cross-domain hosting
             maxAge: 30 * 24 * 60 * 60 * 1000,
-            httpOnly:true,
-            secure:process.env.PRODUCTION==='true'?true:false
+            httpOnly: true,
+            secure: true      // Must be true for HTTPS on Render
         })
 
-        res.status(201).json(sanitizeUser(createdUser))
+        // Return the clean response to stop the frontend loading spinner
+        return res.status(201).json(secureInfo)
 
     } catch (error) {
         console.log(error);
-        res.status(500).json({message:"Error occured during signup, please try again later"})
+        return res.status(500).json({ message: "Error occurred during signup, please try again later" })
     }
 }
+
 
 exports.login=async(req,res)=>{
     try {
