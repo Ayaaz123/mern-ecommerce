@@ -1,15 +1,17 @@
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "://gmail.com",
+  port: 465,
+  secure: true, // true for port 465 SSL connection which bypasses Render's firewall
   auth: {
     user: process.env.EMAIL,
     pass: process.env.PASSWORD,
   },
 });
 
-exports.sendMail = async(receiverEmail,subject,body) => {
-    await transporter.sendMail({
+exports.sendMail = async (receiverEmail, subject, body) => {
+  await transporter.sendMail({
     from: process.env.EMAIL,
     to: receiverEmail,
     subject: subject,
